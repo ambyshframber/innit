@@ -28,7 +28,7 @@
 //! # baz=bop
 //! # [section1]
 //! # foo = baz";
-//! # let document = IniDocument::from_string(ini);
+//! # let document = IniDocument::from_string(ini).unwrap();
 //! assert_eq!(document.get("foo", ""), Some("bar"));
 //! assert_eq!(document.get("foo", "section1"), Some("baz"));
 //! ```
@@ -37,11 +37,15 @@
 //! which means you'll have to parse integer or other structured data on a value-by-value basis.
 //! It also means that you can mix and match multiple datatypes in the same document really easily, even more easily than something like JSON.
 //! See [the wikipedia page on INI](https://en.wikipedia.org/wiki/INI_file) for more info.
+//! 
+//! innit is case sensitive by default, unlike the original MS-DOS and subsequent Windows implementations.
+//! The `case_insensitive` feature enables use of the case insensitive methods.
 
 #![deny(missing_docs)]
 #![allow(clippy::comparison_to_empty)]
 
 use std::collections::HashMap;
+use thiserror::Error;
 
 /// A parsed or generated INI document.
 /// 
@@ -50,7 +54,7 @@ use std::collections::HashMap;
 /// The inner layer represents keys and values inside a section.
 /// 
 /// Currently, comments are not preserved in any way.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IniDocument {
     sections: HashMap<String, HashMap<String, String>>
 }
@@ -72,7 +76,8 @@ impl IniDocument {
         }
     }
     /// Insert a key into a given section. Returns the old value if it exists.
-    pub fn insert<T: Into<String>>(&mut self, key: T, value: T, section: T) -> Option<String> {
+    pub fn insert<T, U, V>(&mut self, key: T, value: U, section: V) -> Option<String>
+    where T: Into<String>, U: Into<String>, V: Into<String> {
         let section: String = section.into();
         if let Some(section) = self.sections.get_mut(&section) {
             section.insert(key.into(), value.into())
@@ -84,7 +89,7 @@ impl IniDocument {
             None
         }
     }
-    /// Get a reference to a value.
+    /// Get a reference to a value in a given section.
     pub fn get<T: AsRef<str>>(&self, key: T, section: T) -> Option<&str> {
         let key = key.as_ref();
         let section = section.as_ref();
@@ -99,7 +104,7 @@ impl IniDocument {
     pub fn get_section<T: AsRef<str>>(&self, section: T) -> Option<&HashMap<String, String>> {
         self.sections.get(section.as_ref())
     }
-    /// Remove a key/value pair in a given section. Returns the value.
+    /// Remove a key/value pair in a given section. Returns the value, if it existed.
     pub fn remove<T: AsRef<str>>(&mut self, key: T, section: T) -> Option<String> {
         let key = key.as_ref();
         let section = section.as_ref();
@@ -110,13 +115,15 @@ impl IniDocument {
             None
         }
     }
-    /// Remove an entire section.
+    /// Remove an entire section. Returns the section, if it existed.
     pub fn remove_section<T: AsRef<str>>(&mut self, section: T) -> Option<HashMap<String, String>> {
         let section = section.as_ref();
         self.sections.remove(section)
     }
 
     /// Parse a document from a string. Comments are not preserved when writing back to a string, so watch out!
+    /// 
+    /// Nesting is (kinda) supported via just treating the entire path as the section name. Relative nesting is not. Inline comments are also not supported.
     pub fn from_string<T: AsRef<str>>(s: T) -> Result<IniDocument, InnitError> {
         let s = s.as_ref();
         let mut document = IniDocument::empty();
@@ -159,6 +166,83 @@ impl IniDocument {
     }
 }
 
+//#[cfg(feature = "case_insensitive")]
+impl IniDocument {
+    /// Get a reference to a value in a given section, using case-insensitive matching.
+    pub fn get_case_insensitive<T: AsRef<str>>(&self, key: T, section: T) -> Option<&str> {
+        let section = section.as_ref().to_lowercase();
+        for (name, data) in &self.sections {
+            if name.to_lowercase() == section {
+                let key = key.as_ref().to_lowercase();
+                for (k, v) in data {
+                    if k.to_lowercase() == key {
+                        return Some(v)
+                    }
+                }
+            }
+        }
+        None
+    }
+    /// Get a section, using case-insensitive matching.
+    pub fn get_section_case_insensitive<T: AsRef<str>>(&self,section: T) -> Option<&HashMap<String, String>> {
+        let section = section.as_ref().to_lowercase();
+        for (name, data) in &self.sections {
+            if name.to_lowercase() == section {
+                return Some(data)
+            }
+        }
+        None
+    }
+
+    /// Remove a key/value pair in a given section, using case-insensitive matching. Returns the value, if it existed.
+    pub fn remove_case_insensitive<T: AsRef<str>>(&mut self, key: T, section: T) -> Option<String> {
+        let section = section.as_ref().to_lowercase();
+        let mut exists = false;
+        let mut actual_section = String::new(); // store these back outside to appease the borrow checker
+        let mut actual_key = String::new();
+
+        'outer: for (name, data) in self.sections.iter_mut() {
+            if name.to_lowercase() == section {
+                actual_section = name.to_string();
+                let key = key.as_ref().to_lowercase();
+                for (k, _) in data {
+                    if k.to_lowercase() == key {
+                        actual_key = k.to_string();
+                        exists = true;
+                        break 'outer
+                    }
+                }
+            }
+        }
+        if exists {
+            self.sections.get_mut(&actual_section).unwrap().remove(&actual_key)
+        }
+        else {
+            None
+        }
+    }
+    /// Remove a section, using case-insensitive matching. Returns the section, if it existed.
+    pub fn remove_section_case_insensitive<T: AsRef<str>>(&mut self, section: T) -> Option<HashMap<String, String>> {
+        let section = section.as_ref().to_lowercase();
+        let mut exists = false;
+        let mut actual_section = String::new(); // store this back outside to appease the borrow checker
+
+        for (name, _) in self.sections.iter_mut() {
+            if name.to_lowercase() == section {
+                actual_section = name.to_string();
+                exists = true;
+                break
+            }
+        }
+        if exists {
+            self.sections.remove(&actual_section)
+        }
+        else {
+            None
+        }
+    }
+}
+
 /// format a hashmap
 fn fmt_hashmap(h: &HashMap<String, String>) -> String {
     let mut ret = String::new();
@@ -192,12 +276,16 @@ fn parse_k_v(s: &str) -> Option<(&str, &str)> {
     Some((split.0.trim(), split.1.trim()))
 }
 
-/// The error returned from the document parse method. The numbers inside the variants are the line numbers on which the error occured.
-#[derive(Debug)]
+/// The error returned from the document parse method.
+/// 
+/// The numbers inside the variants are the line numbers on which the error occured.
+#[derive(Debug, Error, PartialEq)]
 pub enum InnitError {
     /// A line inside a section was missing an equals sign, and is therefore an invalid key/value pair.
+    #[error("bad k/v pair `{0}` on line {1}")]
     MissingEquals(String, usize),
     /// A section was defined with the empty string as the name.
+    #[error("section with empty string as name on line {0}")]
     EmptyStringSection(usize)
 }
 
@@ -224,5 +312,30 @@ foo = baz";
 
         let ini_back = document.to_string();
         println!("{}", ini_back)
+    }
+
+    #[test]
+    fn errors() {
+        let ini = "beans";
+        let document = IniDocument::from_string(ini);
+        assert_eq!(document, Err(InnitError::MissingEquals("beans".into(), 1)))
+    }
+
+    #[cfg(feature = "case_insensitive")]
+    #[test]
+    fn ci() {
+        let ini = r"foo = bar
+# comment
+; comment
+BAZ=bop
+[section1]
+foo = baz";
+        let document = IniDocument::from_string(ini);
+        assert!(document.is_ok());
+        let document = document.unwrap();
+
+        assert_eq!(document.get_case_insensitive("FOO", ""), Some("bar"));
+        assert_eq!(document.get_case_insensitive("baz", ""), Some("bop"));
+        assert_eq!(document.get_case_insensitive("foo", "SECtion1"), Some("baz"));
     }
 }
