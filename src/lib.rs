@@ -33,9 +33,10 @@
 //! assert_eq!(document.get("foo", "section1"), Some("baz"));
 //! ```
 //! 
-//! INI is a stringly typed system, which means the only datatype is the string,
+//! innit's version of INI is a stringly typed system, which means the only datatype is the string,
 //! which means you'll have to parse integer or other structured data on a value-by-value basis.
 //! It also means that you can mix and match multiple datatypes in the same document really easily, even more easily than something like JSON.
+//! It ALSO also means that you don't need quotes or any quote escaping.
 //! See [the wikipedia page on INI](https://en.wikipedia.org/wiki/INI_file) for more info.
 //! 
 //! innit is case sensitive by default, unlike the original MS-DOS and subsequent Windows implementations.
@@ -54,7 +55,7 @@ use thiserror::Error;
 /// The inner layer represents keys and values inside a section.
 /// 
 /// Currently, comments are not preserved in any way.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub struct IniDocument {
     sections: HashMap<String, HashMap<String, String>>
 }
@@ -123,7 +124,7 @@ impl IniDocument {
 
     /// Parse a document from a string. Comments are not preserved when writing back to a string, so watch out!
     /// 
-    /// Nesting is (kinda) supported via just treating the entire path as the section name. Relative nesting is not. Inline comments are also not supported.
+    /// Inline comments are not supported.
     pub fn from_string<T: AsRef<str>>(s: T) -> Result<IniDocument, InnitError> {
         let s = s.as_ref();
         let mut document = IniDocument::empty();
