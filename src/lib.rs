@@ -167,7 +167,7 @@ impl IniDocument {
     }
 }
 
-//#[cfg(feature = "case_insensitive")]
+#[cfg(feature = "case_insensitive")]
 impl IniDocument {
     /// Get a reference to a value in a given section, using case-insensitive matching.
     pub fn get_case_insensitive<T: AsRef<str>>(&self, key: T, section: T) -> Option<&str> {
